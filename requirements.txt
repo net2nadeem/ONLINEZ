@@ -1,5 +1,3 @@
-selenium
-webdriver-manager
-colorama
-gspread
-oauth2client
+gspread==5.7.2
+oauth2client==4.1.3
+selenium==4.12.0

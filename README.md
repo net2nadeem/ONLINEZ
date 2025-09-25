@@ -90,8 +90,8 @@ Automated profile scraper for DamaDam.pk that runs every 15 minutes on GitHub Ac
 #### Required Secrets:
 | Secret Name | Value | Example |
 |-------------|-------|---------|
-| `DAMADAM_USERNAME` | Your DamaDam username | `0utLawZ` |
-| `DAMADAM_PASSWORD` | Your DamaDam password | `@Brandex1999` |
+| `DAMADAM_USERNAME` | Your DamaDam username | `username` |
+| `DAMADAM_PASSWORD` | Your DamaDam password | `password` |
 | `GOOGLE_SHEET_URL` | Your Google Sheet URL | `https://docs.google.com/spreadsheets/d/...` |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Entire JSON file content | `{"type": "service_account",...}` |
 

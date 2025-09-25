@@ -17,12 +17,12 @@ jobs:
       uses: actions/checkout@v4
       
     - name: 🐍 Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         
     - name: 💾 Cache Dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -39,9 +39,9 @@ jobs:
         # Update package list
         sudo apt-get update
         
-        # Install Chrome
-        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
+        # Install Chrome using new method for Ubuntu 24.04
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg
+        sudo sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
         sudo apt-get update
         sudo apt-get install -y google-chrome-stable
         
@@ -60,10 +60,11 @@ jobs:
         
     - name: 📊 Upload Logs (if failed)
       if: failure()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: error-logs
+        name: error-logs-${{ github.run_number }}
         path: |
           *.log
           /tmp/*.log
         retention-days: 7
+        compression-level: 6

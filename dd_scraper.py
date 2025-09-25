@@ -19,7 +19,7 @@ init(autoreset=True)
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("online.json", scope)
 client = gspread.authorize(creds)
-sheet = client.open("DamaDam Scraper").sheet1
+sheet = client.open_by_key("1XQxDCZYy47oqA5-4PdZ1X_WO4Jhy1BIWWNmXBqJX-FE").sheet1
 
 # Login credentials
 USERNAME = "0utLawZ"

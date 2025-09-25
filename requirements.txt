@@ -1,13 +1,5 @@
-# Core web scraping dependencies
-selenium>=4.15.0
-webdriver-manager>=4.0.1
-
-# Google Sheets integration (optional)
-gspread>=5.12.0
-oauth2client>=4.1.3
-
-# Terminal colors and formatting
-colorama>=0.4.6
-
-# For better performance and error handling
-requests>=2.31.0
+selenium
+webdriver-manager
+colorama
+gspread
+oauth2client

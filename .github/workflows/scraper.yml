@@ -1,0 +1,180 @@
+name: 🔥 DamaDam Profile Scraper
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      run_mode:
+        description: 'Run mode'
+        required: true
+        default: 'single'
+        type: choice
+        options:
+        - single
+        - test
+      wait_minutes:
+        description: 'Wait time between runs (continuous mode)'
+        required: false
+        default: '15'
+        type: string
+
+  # Scheduled runs (optional - uncomment to enable)
+  # schedule:
+  #   - cron: '0 */6 * * *'  # Every 6 hours
+  #   - cron: '0 9,15,21 * * *'  # 9 AM, 3 PM, 9 PM UTC
+
+  # Push trigger for testing
+  push:
+    branches: [ main ]
+    paths:
+      - '**.py'
+      - '.github/workflows/**.yml'
+      - 'requirements.txt'
+
+jobs:
+  scrape-profiles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.9]
+
+    steps:
+    - name: 🔽 Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: 📦 Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: 🌐 Install Chrome Browser
+      uses: browser-actions/setup-chrome@latest
+      with:
+        chrome-version: stable
+
+    - name: 🔧 Setup Chrome Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb
+        
+    - name: 📊 Create Google Sheets Service Account File
+      env:
+        GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+      run: |
+        if [ ! -z "$GOOGLE_SERVICE_ACCOUNT" ]; then
+          echo "$GOOGLE_SERVICE_ACCOUNT" > online.json
+          echo "✅ Google Sheets credentials configured"
+        else
+          echo "⚠️ Google Sheets credentials not configured (optional)"
+        fi
+
+    - name: 🔐 Configure Environment Variables
+      env:
+        DD_USERNAME: ${{ secrets.DD_USERNAME }}
+        DD_PASSWORD: ${{ secrets.DD_PASSWORD }}
+        GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+        ENABLE_SHEETS: ${{ secrets.ENABLE_SHEETS }}
+      run: |
+        echo "DD_USERNAME=$DD_USERNAME" >> $GITHUB_ENV
+        echo "DD_PASSWORD=$DD_PASSWORD" >> $GITHUB_ENV  
+        echo "GOOGLE_SHEET_URL=$GOOGLE_SHEET_URL" >> $GITHUB_ENV
+        echo "ENABLE_SHEETS=${ENABLE_SHEETS:-false}" >> $GITHUB_ENV
+        echo "HEADLESS_MODE=true" >> $GITHUB_ENV
+        echo "MIN_DELAY=1" >> $GITHUB_ENV
+        echo "MAX_DELAY=2" >> $GITHUB_ENV
+        echo "LOOP_WAIT_MINUTES=${{ github.event.inputs.wait_minutes || '15' }}" >> $GITHUB_ENV
+        echo "✅ Environment configured"
+
+    - name: 🧪 Test Browser Setup
+      run: |
+        python -c "
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        options = Options()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        driver = webdriver.Chrome(options=options)
+        driver.get('https://www.google.com')
+        print('✅ Browser test successful')
+        driver.quit()
+        "
+
+    - name: 🎯 Run Scraper
+      id: scrape
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        
+        # Create automated input for single run
+        echo "1" | timeout 1800 python DD-Online-Optimized.py || true
+        
+        # Check if CSV was created
+        if [ -f "DD-profiless.csv" ]; then
+          PROFILE_COUNT=$(tail -n +2 DD-profiless.csv | wc -l)
+          echo "profiles_scraped=$PROFILE_COUNT" >> $GITHUB_OUTPUT
+          echo "✅ Scraped $PROFILE_COUNT profiles"
+        else
+          echo "profiles_scraped=0" >> $GITHUB_OUTPUT
+          echo "❌ No profiles file created"
+        fi
+
+    - name: 📊 Upload Results as Artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: scraping-results-${{ github.run_number }}
+        path: |
+          DD-profiless.csv
+          *.log
+        retention-days: 30
+
+    - name: 📈 Generate Summary
+      if: always()
+      run: |
+        echo "## 🔥 Scraping Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Run Mode**: ${{ github.event.inputs.run_mode || 'push-triggered' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Profiles Scraped**: ${{ steps.scrape.outputs.profiles_scraped }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Python Version**: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f "DD-profiless.csv" ]; then
+          echo "### 📄 CSV File Info" >> $GITHUB_STEP_SUMMARY
+          echo "- **File Size**: $(du -h DD-profiless.csv | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Lines**: $(wc -l < DD-profiless.csv)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Results uploaded as artifact: \`scraping-results-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ No CSV file generated" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: 🔄 Setup Continuous Mode (if scheduled)
+      if: github.event_name == 'schedule'
+      run: |
+        echo "🔄 This was a scheduled run"
+        # Add any continuous mode specific logic here
+
+  # Optional: Notification job
+  notify:
+    runs-on: ubuntu-latest
+    needs: scrape-profiles
+    if: always()
+    steps:
+    - name: 📱 Notification Status
+      run: |
+        if [ "${{ needs.scrape-profiles.result }}" == "success" ]; then
+          echo "✅ Scraping completed successfully"
+        else
+          echo "❌ Scraping job failed or was cancelled"
+        fi

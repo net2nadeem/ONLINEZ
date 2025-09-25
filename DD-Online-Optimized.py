@@ -769,16 +769,4 @@ Repository: https://github.com/net2nadeem2/DD-Online
             log_msg("👋 Goodbye!", "INFO")
             
         else:
-            log_msg("❌ Invalid choice. Please run again and choose 1, 2, or 3.", "ERROR")
-            
-    except KeyboardInterrupt:
-        print(f"\n{Fore.YELLOW}🛑 Script interrupted by user{Style.RESET_ALL}")
-    except Exception as e:
-        log_msg(f"❌ Unexpected error: {e}", "ERROR")
-    finally:
-        # Ensure cleanup
-        if global_driver:
-            try:
-                global_driver.quit()
-            except:
-                pass
+            log_msg("❌ Invalid choice", "ERROR

@@ -34,19 +34,35 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: 🌐 Install Chrome and ChromeDriver
+    - name: 🌐 Setup Chrome and ChromeDriver
       run: |
-        # Update package list
+        # Update system
         sudo apt-get update
         
-        # Install Chrome using new method for Ubuntu 24.04
+        # Install Chrome using new GPG method for Ubuntu 24.04
         wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg
         sudo sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
         sudo apt-get update
         sudo apt-get install -y google-chrome-stable
         
-        # Verify installation
+        # Verify Chrome installation
         google-chrome --version
+        
+        # Check if system ChromeDriver exists and works
+        if command -v chromedriver &> /dev/null; then
+            echo "✅ System ChromeDriver found"
+            chromedriver --version
+        else
+            echo "⚠️ No system ChromeDriver, will use webdriver-manager"
+        fi
+        
+        # Set display for headless mode
+        export DISPLAY=:99
+        
+        # Check available memory and disk space
+        echo "💾 Available resources:"
+        free -h
+        df -h
         
     - name: 🚀 Run Profile Scraper
       env:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-DamaDam Profile Scraper - GITHUB ACTIONS VERSION
-Optimized for cloud execution with Google Sheets integration
+DamaDam Profile Scraper - SIMPLIFIED GITHUB ACTIONS VERSION
+More reliable ChromeDriver setup for cloud execution
 """
 
 import os
@@ -10,13 +10,30 @@ import time
 import json
 import random
 import re
+import subprocess
 from datetime import datetime
 
-print("🚀 Starting DamaDam Scraper (GitHub Actions Version)...")
+print("🚀 Starting DamaDam Scraper (Simplified GitHub Actions Version)...")
 
-# Check required packages
-missing_packages = []
+# Check and install packages
+def install_requirements():
+    packages = [
+        "selenium==4.15.2",
+        "gspread==5.12.0", 
+        "oauth2client==4.1.3",
+        "colorama==0.4.6"
+    ]
+    
+    for package in packages:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet"])
+        except:
+            print(f"⚠️ Could not install {package}")
 
+# Install requirements first
+install_requirements()
+
+# Now import packages
 try:
     from selenium import webdriver
     from selenium.webdriver.common.by import By
@@ -24,10 +41,10 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.common.exceptions import TimeoutException, NoSuchElementException
-    from webdriver_manager.chrome import ChromeDriverManager
     print("✅ Selenium ready")
-except ImportError:
-    missing_packages.append("selenium webdriver-manager")
+except ImportError as e:
+    print(f"❌ Selenium import failed: {e}")
+    sys.exit(1)
 
 try:
     import colorama
@@ -35,7 +52,6 @@ try:
     colorama.init(autoreset=True)
     print("✅ Colors ready")
 except ImportError:
-    missing_packages.append("colorama")
     class Fore:
         CYAN = GREEN = YELLOW = RED = WHITE = MAGENTA = BLUE = ""
     class Style:
@@ -45,32 +61,27 @@ try:
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
     print("✅ Google Sheets ready")
-except ImportError:
-    missing_packages.append("gspread oauth2client")
-
-if missing_packages:
-    print(f"❌ Missing packages: {missing_packages}")
+except ImportError as e:
+    print(f"❌ Google Sheets import failed: {e}")
     sys.exit(1)
 
-# === CONFIGURATION FROM ENVIRONMENT VARIABLES ===
+# === CONFIGURATION ===
 LOGIN_URL = "https://damadam.pk/login/"
 ONLINE_USERS_URL = "https://damadam.pk/online_kon/"
 
-# Get credentials from environment variables (GitHub Secrets)
 USERNAME = os.getenv('DAMADAM_USERNAME')
 PASSWORD = os.getenv('DAMADAM_PASSWORD')
 SHEET_URL = os.getenv('GOOGLE_SHEET_URL')
 
 if not all([USERNAME, PASSWORD, SHEET_URL]):
-    print("❌ Missing required environment variables!")
-    print("Please set: DAMADAM_USERNAME, DAMADAM_PASSWORD, GOOGLE_SHEET_URL")
+    print("❌ Missing environment variables!")
     sys.exit(1)
 
-# GitHub Actions optimized delays
-MIN_DELAY = 0.8
-MAX_DELAY = 1.5
-LOGIN_DELAY = 3
-PAGE_LOAD_TIMEOUT = 10
+# Optimized delays for GitHub Actions
+MIN_DELAY = 1.5
+MAX_DELAY = 2.5
+LOGIN_DELAY = 5
+PAGE_LOAD_TIMEOUT = 20
 
 # === LOGGING ===
 def log_msg(message, level="INFO"):
@@ -79,71 +90,102 @@ def log_msg(message, level="INFO"):
     color = colors.get(level, Fore.WHITE)
     print(f"{color}[{timestamp}] {level}: {message}{Style.RESET_ALL}")
 
-# === STATS TRACKING ===
+# === STATS ===
 class ScraperStats:
     def __init__(self):
         self.start_time = datetime.now()
-        self.total = self.current = self.success = self.errors = 0
-        self.exported = self.updated = 0
-    
-    def show_summary(self):
-        elapsed = str(datetime.now() - self.start_time).split('.')[0]
-        print(f"\n{Fore.MAGENTA}📊 FINAL SUMMARY:")
-        print(f"⏱️  Total Time: {elapsed}")
-        print(f"👥 Users Found: {self.total}")
-        print(f"✅ Successfully Scraped: {self.success}")
-        print(f"❌ Errors: {self.errors}")
-        print(f"📊 New Exports: {self.exported}")
-        print(f"🔄 Updated Profiles: {self.updated}{Style.RESET_ALL}")
-        print("-" * 50)
+        self.total = self.success = self.errors = self.exported = self.updated = 0
 
 stats = ScraperStats()
 
-# === GITHUB ACTIONS OPTIMIZED BROWSER ===
-def setup_github_browser():
-    """Browser setup optimized for GitHub Actions environment"""
+# === SIMPLIFIED BROWSER SETUP ===
+def setup_chrome_browser():
+    """Simplified and more reliable browser setup for GitHub Actions"""
     try:
-        log_msg("🚀 Setting up browser for GitHub Actions...")
+        log_msg("🚀 Setting up Chrome browser...", "INFO")
         
+        # Chrome options optimized for GitHub Actions
         options = webdriver.ChromeOptions()
         
-        # GitHub Actions specific options
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
+        # Essential headless options
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox") 
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
-        options.add_argument("--disable-web-security")
         options.add_argument("--window-size=1920,1080")
         
-        # Performance optimizations
-        options.add_argument("--disable-background-timer-throttling")
-        options.add_argument("--disable-backgrounding-occluded-windows")
-        options.add_argument("--disable-renderer-backgrounding")
+        # Stability options
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins")
-        options.add_argument("--disable-images")
-        options.add_argument("--disable-javascript")
-        options.add_argument("--disable-default-apps")
+        options.add_argument("--disable-images")  # Faster loading
+        options.add_argument("--disable-javascript")  # We don't need JS for scraping
         options.add_argument("--no-first-run")
-        options.add_argument("--no-default-browser-check")
-        options.add_argument("--disable-logging")
-        options.add_argument("--disable-background-networking")
-        options.add_argument("--disable-sync")
+        options.add_argument("--disable-default-apps")
         
-        # Remove automation indicators
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
-        options.add_argument("--log-level=3")
-        
-        # Setup ChromeDriver
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
-        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
+        # Memory optimization
+        options.add_argument("--memory-pressure-off")
+        options.add_argument("--aggressive-cache-discard")
         
         # Anti-detection
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument("--log-level=3")  # Suppress logs
+        
+        # Try different ChromeDriver methods
+        driver = None
+        
+        # Method 1: Use system ChromeDriver (usually available in GitHub Actions)
+        try:
+            log_msg("🔧 Attempting system ChromeDriver...", "INFO")
+            # Check if chromedriver is in PATH
+            result = subprocess.run(['which', 'chromedriver'], capture_output=True, text=True)
+            if result.returncode == 0:
+                chromedriver_path = result.stdout.strip()
+                log_msg(f"Found system ChromeDriver at: {chromedriver_path}", "INFO")
+                service = Service(chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=options)
+            else:
+                log_msg("No system ChromeDriver found", "WARNING")
+        except Exception as e:
+            log_msg(f"System ChromeDriver failed: {e}", "WARNING")
+        
+        # Method 2: Try without explicit service (let Selenium find it)
+        if not driver:
+            try:
+                log_msg("🔧 Attempting automatic ChromeDriver detection...", "INFO")
+                driver = webdriver.Chrome(options=options)
+            except Exception as e:
+                log_msg(f"Automatic detection failed: {e}", "WARNING")
+        
+        # Method 3: Download ChromeDriver manually
+        if not driver:
+            try:
+                log_msg("🔧 Downloading ChromeDriver...", "INFO")
+                # Simple ChromeDriver download
+                chrome_version = subprocess.run(['google-chrome', '--version'], capture_output=True, text=True)
+                log_msg(f"Chrome version: {chrome_version.stdout.strip()}", "INFO")
+                
+                # Use webdriver-manager as fallback
+                from webdriver_manager.chrome import ChromeDriverManager
+                driver_path = ChromeDriverManager().install()
+                service = Service(driver_path)
+                driver = webdriver.Chrome(service=service, options=options)
+            except Exception as e:
+                log_msg(f"ChromeDriver download failed: {e}", "ERROR")
+                return None
+        
+        if not driver:
+            log_msg("❌ All ChromeDriver methods failed", "ERROR")
+            return None
+        
+        # Set timeouts
+        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
+        driver.implicitly_wait(5)
+        
+        # Anti-detection scripts
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
-        log_msg("✅ Browser ready for GitHub Actions", "SUCCESS")
+        log_msg("✅ Chrome browser ready", "SUCCESS")
         return driver
         
     except Exception as e:
@@ -151,21 +193,27 @@ def setup_github_browser():
         return None
 
 # === AUTHENTICATION ===
-def login_to_damadam(driver):
+def login_to_site(driver):
     """Login to DamaDam"""
     try:
-        log_msg("🔐 Logging in to DamaDam...")
+        log_msg("🔐 Logging in to DamaDam...", "INFO")
         driver.get(LOGIN_URL)
         
         # Wait for login form
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.ID, "nick"))
         )
         
         # Enter credentials
-        driver.find_element(By.ID, "nick").send_keys(USERNAME)
-        driver.find_element(By.ID, "pass").send_keys(PASSWORD)
-        driver.find_element(By.CSS_SELECTOR, "form button").click()
+        nick_field = driver.find_element(By.ID, "nick")
+        pass_field = driver.find_element(By.ID, "pass")
+        login_button = driver.find_element(By.CSS_SELECTOR, "form button")
+        
+        nick_field.clear()
+        nick_field.send_keys(USERNAME)
+        pass_field.clear() 
+        pass_field.send_keys(PASSWORD)
+        login_button.click()
         
         # Wait for login to complete
         time.sleep(LOGIN_DELAY)
@@ -175,7 +223,7 @@ def login_to_damadam(driver):
             log_msg("✅ Login successful", "SUCCESS")
             return True
         else:
-            log_msg("❌ Login failed - still on login page", "ERROR")
+            log_msg("❌ Login failed - check credentials", "ERROR")
             return False
             
     except Exception as e:
@@ -184,20 +232,24 @@ def login_to_damadam(driver):
 
 # === USER FETCHING ===
 def get_online_users(driver):
-    """Get list of online users"""
+    """Get online users list"""
     try:
-        log_msg("👥 Fetching online users...")
+        log_msg("👥 Fetching online users...", "INFO")
         driver.get(ONLINE_USERS_URL)
         
-        # Wait for user list to load
-        WebDriverWait(driver, PAGE_LOAD_TIMEOUT).until(
+        # Wait for users list
+        WebDriverWait(driver, 15).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, "li bdi"))
         )
         
-        # Extract unique usernames
-        users = list({elem.text.strip() 
-                     for elem in driver.find_elements(By.CSS_SELECTOR, "li bdi") 
-                     if elem.text.strip()})
+        # Extract usernames
+        user_elements = driver.find_elements(By.CSS_SELECTOR, "li bdi")
+        users = []
+        
+        for elem in user_elements:
+            username = elem.text.strip()
+            if username and username not in users:
+                users.append(username)
         
         log_msg(f"✅ Found {len(users)} online users", "SUCCESS")
         return users
@@ -207,19 +259,21 @@ def get_online_users(driver):
         return []
 
 # === PROFILE SCRAPING ===
-def scrape_profile(driver, nickname):
-    """Scrape individual user profile"""
+def scrape_user_profile(driver, nickname):
+    """Scrape individual profile"""
     url = f"https://damadam.pk/users/{nickname}/"
+    
     try:
         driver.get(url)
         
-        # Wait for profile to load
-        WebDriverWait(driver, 8).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "h1.cxl.clb.lsp"))
+        # Wait for profile page
+        WebDriverWait(driver, 12).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "h1"))
         )
         
+        # Basic data structure
         now = datetime.now()
-        data = {
+        profile_data = {
             'DATE': now.strftime("%d-%b-%Y"),
             'TIME': now.strftime("%I:%M %p"),
             'NICKNAME': nickname,
@@ -236,59 +290,62 @@ def scrape_profile(driver, nickname):
             'INTRO': ''
         }
         
-        # Extract intro
-        try: 
+        # Extract intro/bio
+        try:
             intro_elem = driver.find_element(By.CSS_SELECTOR, ".ow span.nos")
-            data['INTRO'] = clean_text(intro_elem.text)
-        except: 
+            profile_data['INTRO'] = clean_text(intro_elem.text)
+        except:
             pass
-            
+        
         # Extract profile fields
-        fields_mapping = {
+        field_mappings = {
             'City:': 'CITY',
-            'Gender:': 'GENDER', 
-            'Married:': 'MARRIED',
+            'Gender:': 'GENDER',
+            'Married:': 'MARRIED', 
             'Age:': 'AGE',
             'Joined:': 'JOINED'
         }
         
-        for field_text, key in fields_mapping.items():
+        for field, key in field_mappings.items():
             try:
-                xpath = f"//b[contains(text(), '{field_text}')]/following-sibling::span[1]"
-                element = driver.find_element(By.XPATH, xpath)
-                value = element.text
+                xpath = f"//b[contains(text(), '{field}')]/following-sibling::span[1]"
+                elem = driver.find_element(By.XPATH, xpath)
+                value = elem.text.strip()
                 
                 if key == "JOINED":
-                    data[key] = extract_numbers(value)
+                    # Extract year numbers
+                    numbers = re.findall(r'\d+', value)
+                    profile_data[key] = ', '.join(numbers) if numbers else clean_text(value)
                 else:
-                    data[key] = clean_text(value)
-            except: 
+                    profile_data[key] = clean_text(value)
+            except:
                 pass
-                
+        
         # Extract followers
-        try: 
+        try:
             followers_elem = driver.find_element(By.CSS_SELECTOR, "span.cl.sp.clb")
-            followers_match = re.search(r'(\d+)', followers_elem.text)
-            if followers_match:
-                data['FOLLOWERS'] = followers_match.group(1)
-        except: 
+            followers_text = followers_elem.text
+            match = re.search(r'(\d+)', followers_text)
+            if match:
+                profile_data['FOLLOWERS'] = match.group(1)
+        except:
             pass
-            
+        
         # Extract posts count
-        try: 
+        try:
             posts_elem = driver.find_element(By.CSS_SELECTOR, "a[href*='/profile/public/'] button div:first-child")
-            data['POSTS'] = clean_text(posts_elem.text)
-        except: 
+            profile_data['POSTS'] = clean_text(posts_elem.text)
+        except:
             pass
-            
+        
         # Extract profile image
-        try: 
+        try:
             img_elem = driver.find_element(By.CSS_SELECTOR, "img[src*='avatar-imgs']")
-            data['PIMAGE'] = img_elem.get_attribute('src')
-        except: 
+            profile_data['PIMAGE'] = img_elem.get_attribute('src')
+        except:
             pass
-            
-        return data
+        
+        return profile_data
         
     except Exception as e:
         log_msg(f"❌ Failed to scrape {nickname}: {e}", "ERROR")
@@ -296,91 +353,86 @@ def scrape_profile(driver, nickname):
 
 # === UTILITY FUNCTIONS ===
 def clean_text(text):
-    """Clean and normalize text"""
-    if not text: 
+    """Clean text data"""
+    if not text:
         return ""
     text = str(text).strip().replace('\xa0', ' ').replace('+', '')
-    if text.lower() in ['not set', 'no set', 'no city']: 
+    if text.lower() in ['not set', 'no set', 'no city']:
         return ""
     return re.sub(r'\s+', ' ', text).strip()
 
-def extract_numbers(text):
-    """Extract numbers from text"""
-    if not text: 
-        return ""
-    numbers = re.findall(r'\d+', str(text))
-    return ', '.join(numbers) if numbers else clean_text(text)
-
 # === GOOGLE SHEETS EXPORT ===
-def export_to_google_sheets(profiles_batch):
-    """Export profiles to Google Sheets with duplicate handling"""
-    if not profiles_batch:
+def export_to_sheets(profiles_list):
+    """Export profiles to Google Sheets"""
+    if not profiles_list:
         return False
-        
+    
     try:
-        log_msg(f"📊 Exporting {len(profiles_batch)} profiles to Google Sheets...", "INFO")
+        log_msg(f"📊 Exporting {len(profiles_list)} profiles to Google Sheets...", "INFO")
         
-        # Setup Google Sheets connection using service account JSON from environment
-        google_creds = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
-        if not google_creds:
-            log_msg("❌ Missing GOOGLE_SERVICE_ACCOUNT_JSON environment variable", "ERROR")
+        # Get Google credentials from environment
+        google_creds_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+        if not google_creds_json:
+            log_msg("❌ Missing Google credentials", "ERROR")
             return False
-            
-        # Parse the JSON credentials
-        creds_dict = json.loads(google_creds)
         
-        # Setup Google Sheets API
-        scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
+        # Setup Google Sheets connection
+        creds_dict = json.loads(google_creds_json)
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
+        
+        # Open spreadsheet
         workbook = client.open_by_url(SHEET_URL)
         worksheet = workbook.sheet1
         
-        # Set up headers if sheet is empty
+        # Setup headers
         headers = ["DATE","TIME","NICKNAME","TAGS","CITY","GENDER","MARRIED","AGE",
-                   "JOINED","FOLLOWERS","POSTS","PLINK","PIMAGE","INTRO","SCOUNT"]
+                  "JOINED","FOLLOWERS","POSTS","PLINK","PIMAGE","INTRO","SCOUNT"]
         
+        # Check if headers exist
         existing_data = worksheet.get_all_values()
-        if not existing_data or not existing_data[0]: 
+        if not existing_data or not existing_data[0]:
             worksheet.append_row(headers)
-            log_msg("✅ Headers added to Google Sheet", "SUCCESS")
-            existing_nicks = []
+            existing_nicknames = []
+            log_msg("✅ Headers added to sheet", "SUCCESS")
         else:
-            # Get existing nicknames (column 3, skip header)
-            existing_nicks = [row[2] for row in existing_data[1:] if len(row) > 2]
+            # Get existing nicknames (column 3)
+            existing_nicknames = [row[2] for row in existing_data[1:] if len(row) > 2]
         
         exported_count = 0
         updated_count = 0
         
-        for profile in profiles_batch:
-            nickname = profile.get("NICKNAME","")
-            if not nickname: 
+        # Process each profile
+        for profile in profiles_list:
+            nickname = profile.get("NICKNAME", "")
+            if not nickname:
                 continue
             
             # Prepare row data
-            row = [
-                profile.get("DATE",""),
-                profile.get("TIME",""),
+            row_data = [
+                profile.get("DATE", ""),
+                profile.get("TIME", ""),
                 nickname,
-                "",  # TAGS (empty)
-                profile.get("CITY",""),
-                profile.get("GENDER",""),
-                profile.get("MARRIED",""),
-                profile.get("AGE",""),
-                profile.get("JOINED",""),
-                profile.get("FOLLOWERS",""),
-                profile.get("POSTS",""),
-                profile.get("PLINK",""),
-                profile.get("PIMAGE",""),
-                clean_text(profile.get("INTRO","")),
+                "",  # TAGS
+                profile.get("CITY", ""),
+                profile.get("GENDER", ""),
+                profile.get("MARRIED", ""),
+                profile.get("AGE", ""),
+                profile.get("JOINED", ""),
+                profile.get("FOLLOWERS", ""),
+                profile.get("POSTS", ""),
+                profile.get("PLINK", ""),
+                profile.get("PIMAGE", ""),
+                clean_text(profile.get("INTRO", "")),
                 "1"  # Initial seen count
             ]
             
-            # Check if nickname already exists
-            if nickname in existing_nicks:
-                # Update seen count for existing profile
-                row_index = existing_nicks.index(nickname) + 2  # +2 for header and 0-based index
+            # Check for duplicates
+            if nickname in existing_nicknames:
+                # Update seen count
                 try:
+                    row_index = existing_nicknames.index(nickname) + 2
                     current_count = worksheet.cell(row_index, 15).value or "0"
                     new_count = str(int(current_count) + 1)
                     worksheet.update_cell(row_index, 15, new_count)
@@ -388,18 +440,18 @@ def export_to_google_sheets(profiles_batch):
                     stats.updated += 1
                     log_msg(f"🔄 Updated {nickname} (seen {new_count} times)", "INFO")
                 except Exception as e:
-                    log_msg(f"❌ Failed to update {nickname}: {e}", "ERROR")
+                    log_msg(f"Failed to update {nickname}: {e}", "WARNING")
             else:
                 # Add new profile
                 try:
-                    worksheet.append_row(row)
-                    existing_nicks.append(nickname)
+                    worksheet.append_row(row_data)
+                    existing_nicknames.append(nickname)
                     exported_count += 1
                     stats.exported += 1
                 except Exception as e:
-                    log_msg(f"❌ Failed to add {nickname}: {e}", "ERROR")
+                    log_msg(f"Failed to add {nickname}: {e}", "WARNING")
         
-        log_msg(f"✅ Google Sheets export complete: {exported_count} new, {updated_count} updated", "SUCCESS")
+        log_msg(f"✅ Export complete: {exported_count} new, {updated_count} updated", "SUCCESS")
         return True
         
     except Exception as e:
@@ -412,60 +464,62 @@ def main():
     log_msg("🚀 Starting DamaDam Profile Scraper", "INFO")
     
     # Setup browser
-    driver = setup_github_browser()
+    driver = setup_chrome_browser()
     if not driver:
-        log_msg("❌ Failed to setup browser", "ERROR")
+        log_msg("❌ Cannot continue without browser", "ERROR")
         return
     
     try:
-        # Login
-        if not login_to_damadam(driver):
-            log_msg("❌ Authentication failed", "ERROR")
+        # Login to site
+        if not login_to_site(driver):
+            log_msg("❌ Login failed - stopping execution", "ERROR")
             return
         
         # Get online users
         users = get_online_users(driver)
         if not users:
-            log_msg("❌ No online users found", "ERROR")
+            log_msg("❌ No online users found", "WARNING")
             return
         
         stats.total = len(users)
         scraped_profiles = []
         
-        # Scrape profiles
-        for i, nickname in enumerate(users, 1):
-            stats.current = i
+        # Scrape each user profile
+        for i, username in enumerate(users, 1):
+            log_msg(f"🔍 Scraping {username} ({i}/{stats.total})", "INFO")
             
-            log_msg(f"🔍 Scraping {nickname} ({i}/{stats.total})", "INFO")
-            profile = scrape_profile(driver, nickname)
+            profile = scrape_user_profile(driver, username)
             
             if profile:
                 scraped_profiles.append(profile)
                 stats.success += 1
                 
-                # Export in batches of 5
-                if len(scraped_profiles) % 5 == 0:
-                    export_to_google_sheets(scraped_profiles[-5:])
-                    
+                # Export in batches of 10 for efficiency  
+                if len(scraped_profiles) % 10 == 0:
+                    export_to_sheets(scraped_profiles[-10:])
             else:
                 stats.errors += 1
             
-            # Random delay to avoid being blocked
+            # Random delay between requests
             time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
         
-        # Export remaining profiles
-        remaining = len(scraped_profiles) % 5
+        # Export any remaining profiles
+        remaining = len(scraped_profiles) % 10
         if remaining > 0:
-            export_to_google_sheets(scraped_profiles[-remaining:])
+            export_to_sheets(scraped_profiles[-remaining:])
         
         # Final summary
-        stats.show_summary()
+        elapsed_time = str(datetime.now() - stats.start_time).split('.')[0]
+        log_msg(f"🎉 COMPLETED! Time: {elapsed_time}", "SUCCESS")
+        log_msg(f"📊 Total: {stats.total} | Success: {stats.success} | Errors: {stats.errors}", "INFO")
+        log_msg(f"📈 Exported: {stats.exported} | Updated: {stats.updated}", "INFO")
         
     except Exception as e:
         log_msg(f"❌ Execution error: {e}", "ERROR")
     finally:
-        driver.quit()
-        log_msg("🏁 Scraper completed", "INFO")
+        if driver:
+            driver.quit()
+        log_msg("🏁 Scraper finished", "INFO")
 
 if __name__ == "__main__":
     main()

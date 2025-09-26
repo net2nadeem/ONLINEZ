@@ -70,7 +70,7 @@ if not all([USERNAME, PASSWORD, SHEET_URL]):
 MIN_DELAY = 1.2  # Slightly increased for stability
 MAX_DELAY = 2.0  # Increased for GitHub Actions
 LOGIN_DELAY = 4  # Increased for network latency
-PAGE_LOAD_TIMEOUT = 15  # Increased timeout
+PAGE_LOAD_TIMEOUT = 5  # Increased timeout
 
 # === LOGGING ===
 def log_msg(message, level="INFO"):

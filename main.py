@@ -484,7 +484,7 @@ def main():
                 stats.success += 1
                 
                 # Export in batches of 5
-                if len(scraped_profiles) % 5 == 0:
+                if len(scraped_profiles) % 10 == 0:
                     export_to_google_sheets(scraped_profiles[-5:])
                     
             else:

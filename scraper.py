@@ -95,6 +95,12 @@ def track_api_request():
         time.sleep(GOOGLE_API_RATE_LIMIT['retry_delay'])
         api_requests = []  # Reset counter
 
+# Optimized delays
+MIN_DELAY = 1.0
+MAX_DELAY = 2.0
+LOGIN_DELAY = 4
+PAGE_LOAD_TIMEOUT = 8
+
 # Tags configuration
 TAGS_CONFIG = {
     'Following': '🔗 Following',
@@ -188,7 +194,7 @@ def setup_github_browser():
             service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=options)
         
-        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
+        driver.set_page_load_timeout(15)  # Fixed timeout value
         
         # Anti-detection scripts
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -423,7 +429,7 @@ def scrape_profile(driver, nickname):
         driver.get(url)
         
         # Wait for profile to load
-        WebDriverWait(driver, 8).until(
+        WebDriverWait(driver, 12).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "h1.cxl.clb.lsp"))
         )
         

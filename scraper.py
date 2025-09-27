@@ -66,11 +66,34 @@ if not all([USERNAME, PASSWORD, SHEET_URL]):
     print("Required: DAMADAM_USERNAME, DAMADAM_PASSWORD, GOOGLE_SHEET_URL")
     sys.exit(1)
 
-# Optimized delays
-MIN_DELAY = 1.0
-MAX_DELAY = 2.0
-LOGIN_DELAY = 4
-PAGE_LOAD_TIMEOUT = 8
+# Rate limiting configuration
+GOOGLE_API_RATE_LIMIT = {
+    'max_requests_per_minute': 50,  # Conservative limit (Google allows 60)
+    'batch_size': 3,                # Smaller batches to stay under limit
+    'retry_delay': 65,              # Wait time when rate limited (65 seconds)
+    'request_delay': 1.2            # Delay between API calls
+}
+
+# Request tracking for rate limiting
+api_requests = []
+
+def track_api_request():
+    """Track API requests for rate limiting"""
+    from datetime import datetime
+    now = datetime.now()
+    global api_requests
+    
+    # Clean old requests (older than 1 minute)
+    api_requests = [req_time for req_time in api_requests if (now - req_time).seconds < 60]
+    
+    # Add current request
+    api_requests.append(now)
+    
+    # Check if we need to wait
+    if len(api_requests) >= GOOGLE_API_RATE_LIMIT['max_requests_per_minute']:
+        log_msg("⏸️ Rate limit approaching, pausing for 65 seconds...", "WARNING")
+        time.sleep(GOOGLE_API_RATE_LIMIT['retry_delay'])
+        api_requests = []  # Reset counter
 
 # Tags configuration
 TAGS_CONFIG = {
@@ -599,7 +622,222 @@ def get_tags_for_nickname(nickname, tags_mapping):
     tags = tags_mapping[nickname]
     return ", ".join(tags) if tags else ""
 
-def export_to_google_sheets(profiles_batch, tags_mapping, target_updates=None):
+def export_to_google_sheets_with_rate_limiting(profiles_batch, tags_mapping, target_updates=None):
+    """Rate-limited Google Sheets export with intelligent error handling"""
+    if not profiles_batch and not target_updates:
+        return False
+        
+    try:
+        log_msg(f"📊 Processing Google Sheets updates (Rate-Limited Mode)...", "INFO")
+        
+        client = get_google_sheets_client()
+        if not client:
+            return False
+            
+        workbook = client.open_by_url(SHEET_URL)
+        
+        # Handle target status updates with rate limiting
+        if target_updates:
+            try:
+                target_sheet = workbook.worksheet("Target")
+                successful_updates = 0
+                
+                for update in target_updates:
+                    try:
+                        # Check rate limit before each request
+                        track_api_request()
+                        
+                        row_idx = update['row_index']
+                        status = update['status']
+                        notes = update.get('notes', '')
+                        
+                        # Single batch update for efficiency
+                        update_range = f'B{row_idx}:D{row_idx}'
+                        update_values = [status]
+                        
+                        # Add timestamp if completed
+                        if status.upper() == 'COMPLETED':
+                            from datetime import datetime
+                            update_values.append(datetime.now().strftime("%Y-%m-%d %H:%M"))
+                        else:
+                            update_values.append('')
+                            
+                        # Add notes
+                        update_values.append(notes)
+                        
+                        # Single API call for all columns
+                        target_sheet.update(update_range, [update_values])
+                        successful_updates += 1
+                        
+                        # Small delay between requests
+                        time.sleep(GOOGLE_API_RATE_LIMIT['request_delay'])
+                        
+                    except Exception as e:
+                        if "429" in str(e) or "RATE_LIMIT_EXCEEDED" in str(e):
+                            log_msg("🚨 Rate limit hit, waiting 65 seconds...", "WARNING")
+                            time.sleep(65)
+                            # Retry this update
+                            try:
+                                target_sheet.update(update_range, [update_values])
+                                successful_updates += 1
+                            except:
+                                log_msg(f"❌ Failed to update target after retry: {row_idx}", "ERROR")
+                        else:
+                            log_msg(f"❌ Target update error: {e}", "ERROR")
+                
+                log_msg(f"✅ Updated {successful_updates}/{len(target_updates)} target statuses", "SUCCESS")
+                
+            except Exception as e:
+                log_msg(f"⚠️ Target sheet update failed: {e}", "WARNING")
+        
+        # Process profile data if available
+        if not profiles_batch:
+            return True
+            
+        # Get main worksheet
+        worksheet = workbook.sheet1
+        
+        # Setup headers
+        headers = ["DATE","TIME","NICKNAME","TAGS","CITY","GENDER","MARRIED","AGE",
+                   "JOINED","FOLLOWERS","POSTS","PLINK","PIMAGE","INTRO"]
+        
+        # Check rate limit before reading
+        track_api_request()
+        existing_data = worksheet.get_all_values()
+        
+        if not existing_data or not existing_data[0]: 
+            track_api_request()
+            worksheet.append_row(headers)
+            log_msg("✅ Headers added to Google Sheet", "SUCCESS")
+            existing_rows = {}
+        else:
+            existing_rows = {}
+            for i, row in enumerate(existing_data[1:], 2):
+                if len(row) > 2 and row[2].strip():
+                    existing_rows[row[2].strip()] = {
+                        'row_index': i,
+                        'data': row
+                    }
+        
+        new_count = 0
+        updated_count = 0
+        
+        # Process profiles with rate limiting
+        for profile in profiles_batch:
+            try:
+                nickname = profile.get("NICKNAME","").strip()
+                if not nickname: 
+                    continue
+                
+                # Add tags to profile
+                profile['TAGS'] = get_tags_for_nickname(nickname, tags_mapping)
+                
+                # Prepare row data
+                row = [
+                    profile.get("DATE",""),
+                    profile.get("TIME",""),
+                    nickname,
+                    profile.get("TAGS",""),
+                    profile.get("CITY",""),
+                    profile.get("GENDER",""),
+                    profile.get("MARRIED",""),
+                    profile.get("AGE",""),
+                    profile.get("JOINED",""),
+                    profile.get("FOLLOWERS",""),
+                    profile.get("POSTS",""),
+                    profile.get("PLINK",""),
+                    profile.get("PIMAGE",""),
+                    clean_text(profile.get("INTRO",""))
+                ]
+                
+                if nickname in existing_rows:
+                    # Update existing profile
+                    existing_info = existing_rows[nickname]
+                    row_index = existing_info['row_index']
+                    existing_data_row = existing_info['data']
+                    
+                    # Check if update needed
+                    needs_update = False
+                    key_fields = [4, 5, 6, 7, 8, 9, 10, 13]
+                    
+                    for field_idx in key_fields:
+                        existing_value = existing_data_row[field_idx] if field_idx < len(existing_data_row) else ""
+                        new_value = row[field_idx] if field_idx < len(row) else ""
+                        if existing_value != new_value and new_value:
+                            needs_update = True
+                            break
+                    
+                    # Check tags change
+                    existing_tags = existing_data_row[3] if len(existing_data_row) > 3 else ""
+                    if existing_tags != row[3]:
+                        needs_update = True
+                    
+                    if needs_update:
+                        try:
+                            # Rate limit check
+                            track_api_request()
+                            
+                            # Update row
+                            range_name = f'A{row_index}:N{row_index}'
+                            worksheet.update(range_name, [row])
+                            updated_count += 1
+                            stats.updated_profiles += 1
+                            log_msg(f"🔄 Updated {nickname}", "INFO")
+                            
+                            # Delay between updates
+                            time.sleep(GOOGLE_API_RATE_LIMIT['request_delay'])
+                            
+                        except Exception as e:
+                            if "429" in str(e) or "RATE_LIMIT_EXCEEDED" in str(e):
+                                log_msg(f"🚨 Rate limit hit updating {nickname}, retrying after 65s...", "WARNING")
+                                time.sleep(65)
+                                try:
+                                    worksheet.update(range_name, [row])
+                                    updated_count += 1
+                                    log_msg(f"✅ Retry successful for {nickname}", "SUCCESS")
+                                except:
+                                    log_msg(f"❌ Failed to update {nickname} after retry", "ERROR")
+                            else:
+                                log_msg(f"❌ Failed to update {nickname}: {e}", "ERROR")
+                    else:
+                        log_msg(f"➡️ {nickname} - No changes needed", "INFO")
+                        
+                else:
+                    # Add new profile
+                    try:
+                        # Rate limit check
+                        track_api_request()
+                        
+                        worksheet.append_row(row)
+                        new_count += 1
+                        stats.new_profiles += 1
+                        log_msg(f"✅ Added new profile: {nickname}", "SUCCESS")
+                        
+                        # Delay between additions
+                        time.sleep(GOOGLE_API_RATE_LIMIT['request_delay'])
+                        
+                    except Exception as e:
+                        if "429" in str(e) or "RATE_LIMIT_EXCEEDED" in str(e):
+                            log_msg(f"🚨 Rate limit hit adding {nickname}, retrying after 65s...", "WARNING")
+                            time.sleep(65)
+                            try:
+                                worksheet.append_row(row)
+                                new_count += 1
+                                log_msg(f"✅ Retry successful for {nickname}", "SUCCESS")
+                            except:
+                                log_msg(f"❌ Failed to add {nickname} after retry", "ERROR")
+                        else:
+                            log_msg(f"❌ Failed to add {nickname}: {e}", "ERROR")
+                            
+            except Exception as e:
+                log_msg(f"❌ Error processing profile {nickname}: {e}", "ERROR")
+        
+        log_msg(f"📊 Rate-limited export complete: {new_count} new, {updated_count} updated", "SUCCESS")
+        return True
+        
+    except Exception as e:
+        log_msg(f"❌ Google Sheets export failed: {e}", "ERROR")
+        return False
     """Enhanced Google Sheets export with smart updates and target status tracking"""
     if not profiles_batch and not target_updates:
         return False
@@ -780,9 +1018,9 @@ def main():
         stats.total = len(target_users)
         scraped_profiles = []
         target_updates = []
-        batch_size = 5  # Smaller batch for more frequent updates
+        batch_size = GOOGLE_API_RATE_LIMIT['batch_size']  # Use rate-limited batch size (3)
         
-        log_msg(f"🎯 Processing {stats.total} target users...", "INFO")
+        log_msg(f"🎯 Processing {stats.total} target users with rate-limited batches of {batch_size}...", "INFO")
         
         # Scrape target profiles
         for i, target_user in enumerate(target_users, 1):
@@ -818,11 +1056,16 @@ def main():
                     })
                     log_msg(f"❌ Failed to scrape: {nickname}", "ERROR")
                 
-                # Export in batches with target updates
+                # Export in smaller batches with rate limiting
                 if len(scraped_profiles) >= batch_size or len(target_updates) >= batch_size:
-                    export_to_google_sheets(scraped_profiles, tags_mapping, target_updates)
+                    log_msg(f"📤 Exporting batch of {len(scraped_profiles)} profiles...", "INFO")
+                    export_to_google_sheets_with_rate_limiting(scraped_profiles, tags_mapping, target_updates)
                     scraped_profiles = []  # Clear batch
                     target_updates = []   # Clear updates
+                    
+                    # Extra pause between batches to ensure we stay under rate limits
+                    log_msg("⏸️ Pausing 10 seconds between batches for rate limit safety...", "INFO")
+                    time.sleep(10)
                     
             except Exception as e:
                 stats.errors += 1
@@ -841,7 +1084,8 @@ def main():
         
         # Export remaining profiles and updates
         if scraped_profiles or target_updates:
-            export_to_google_sheets(scraped_profiles, tags_mapping, target_updates)
+            log_msg(f"📤 Exporting final batch of {len(scraped_profiles)} profiles...", "INFO")
+            export_to_google_sheets_with_rate_limiting(scraped_profiles, tags_mapping, target_updates)
         
         # Final summary
         stats.show_summary()

@@ -1,4 +1,4 @@
-name: DamaDam Profile Scraper
+name: Target 🎯 DD Bot
 
 on:
   # Manual trigger
@@ -7,7 +7,7 @@ on:
       batch_size:
         description: 'Batch size for processing'
         required: false
-        default: '10'
+        default: '20'
         type: string
       max_users:
         description: 'Maximum users to scrape (0 = no limit)'
@@ -17,7 +17,7 @@ on:
   
   # Automatic schedule - runs every 6 hours
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */1 * * *'
   
   # For testing
   push:

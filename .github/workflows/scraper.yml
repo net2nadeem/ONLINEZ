@@ -1,27 +1,47 @@
 name: DamaDam Profile Scraper
 
 on:
-  # Run every 15 minutes
-  schedule:
-    - cron: '*/15 * * * *'
-  
-  # Allow manual trigger
+  # Manual trigger
   workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Batch size for processing'
+        required: false
+        default: '10'
+        type: string
+      max_users:
+        description: 'Maximum users to scrape (0 = no limit)'
+        required: false
+        default: '0'
+        type: string
+  
+  # Automatic schedule - runs every 6 hours
+  schedule:
+    - cron: '0 */6 * * *'
+  
+  # For testing
+  push:
+    branches: [ main ]
+    paths: [ 'scraper.py', '.github/workflows/scraper.yml' ]
 
 jobs:
-  scrape-profiles:
+  scrape:
     runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: [3.9]
     
     steps:
     - name: 📥 Checkout Repository
       uses: actions/checkout@v4
       
-    - name: 🐍 Set up Python
+    - name: 🐍 Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: ${{ matrix.python-version }}
         
-    - name: 💾 Cache Dependencies
+    - name: 🧰 Cache Python Dependencies
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
@@ -34,53 +54,111 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: 🌐 Setup Chrome and ChromeDriver
+    - name: 🌐 Setup Chrome
+      uses: browser-actions/setup-chrome@v1
+      with:
+        chrome-version: stable
+        install-dependencies: true
+        
+    - name: 🔧 Verify Chrome Installation
       run: |
-        # Update system
-        sudo apt-get update
-        
-        # Install Chrome using new GPG method for Ubuntu 24.04
-        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg
-        sudo sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
-        sudo apt-get update
-        sudo apt-get install -y google-chrome-stable
-        
-        # Verify Chrome installation
         google-chrome --version
+        which google-chrome
         
-        # Check if system ChromeDriver exists and works
-        if command -v chromedriver &> /dev/null; then
-            echo "✅ System ChromeDriver found"
-            chromedriver --version
-        else
-            echo "⚠️ No system ChromeDriver, will use webdriver-manager"
-        fi
-        
-        # Set display for headless mode
-        export DISPLAY=:99
-        
-        # Check available memory and disk space
-        echo "💾 Available resources:"
-        free -h
-        df -h
-        
-    - name: 🚀 Run Profile Scraper
+    - name: 🔐 Set Environment Variables
       env:
         DAMADAM_USERNAME: ${{ secrets.DAMADAM_USERNAME }}
         DAMADAM_PASSWORD: ${{ secrets.DAMADAM_PASSWORD }}
         GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
         GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       run: |
-        echo "🔥 Starting DamaDam Profile Scraper..."
-        python main.py
+        echo "DAMADAM_USERNAME=$DAMADAM_USERNAME" >> $GITHUB_ENV
+        echo "DAMADAM_PASSWORD=$DAMADAM_PASSWORD" >> $GITHUB_ENV
+        echo "GOOGLE_SHEET_URL=$GOOGLE_SHEET_URL" >> $GITHUB_ENV
+        echo "GOOGLE_SERVICE_ACCOUNT_JSON<<EOF" >> $GITHUB_ENV
+        echo "$GOOGLE_SERVICE_ACCOUNT_JSON" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
         
-    - name: 📊 Upload Logs (if failed)
-      if: failure()
+    - name: 🔍 Validate Environment Variables
+      run: |
+        if [ -z "$DAMADAM_USERNAME" ]; then
+          echo "❌ DAMADAM_USERNAME is not set"
+          exit 1
+        fi
+        if [ -z "$DAMADAM_PASSWORD" ]; then
+          echo "❌ DAMADAM_PASSWORD is not set"
+          exit 1
+        fi
+        if [ -z "$GOOGLE_SHEET_URL" ]; then
+          echo "❌ GOOGLE_SHEET_URL is not set"
+          exit 1
+        fi
+        if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+          echo "❌ GOOGLE_SERVICE_ACCOUNT_JSON is not set"
+          exit 1
+        fi
+        # Validate JSON format
+        echo "$GOOGLE_SERVICE_ACCOUNT_JSON" | python -m json.tool > /dev/null
+        if [ $? -eq 0 ]; then
+          echo "✅ All environment variables are set and JSON is valid"
+        else
+          echo "❌ GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON"
+          exit 1
+        fi
+        
+    - name: 🚀 Run DamaDam Scraper
+      run: |
+        echo "🚀 Starting DamaDam Profile Scraper..."
+        echo "⏰ Execution time: $(date)"
+        echo "🖥️ Runner: ${{ runner.os }}"
+        echo "🐍 Python: ${{ matrix.python-version }}"
+        
+        # Run with timeout to prevent hanging
+        timeout 45m python scraper.py
+        
+      timeout-minutes: 50
+      
+    - name: 📊 Upload Execution Logs
+      if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: error-logs-${{ github.run_number }}
+        name: scraper-logs-${{ github.run_number }}
         path: |
           *.log
-          /tmp/*.log
+          logs/
         retention-days: 7
-        compression-level: 6
+        if-no-files-found: ignore
+        
+    - name: 💬 Notify on Failure
+      if: failure()
+      run: |
+        echo "❌ Scraper execution failed!"
+        echo "📝 Check the logs in the Actions tab for details."
+        echo "🔧 Common issues:"
+        echo "   1. Invalid DamaDam credentials"
+        echo "   2. Google Sheets permissions"
+        echo "   3. Network connectivity issues"
+        echo "   4. DamaDam site changes"
+
+  # Optional: Health check job
+  health-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+    - name: 🏥 Health Check
+      run: |
+        echo "🏥 Running health check..."
+        echo "📅 Scheduled run at: $(date)"
+        echo "🔄 Next run in ~6 hours"
+        
+        # You can add additional health checks here
+        # e.g., ping external services, check API quotas, etc.
+        
+        echo "✅ Health check completed"
+
+# Workflow configuration
+env:
+  # Global environment variables
+  PYTHONUNBUFFERED: 1
+  PYTHONIOENCODING: utf-8

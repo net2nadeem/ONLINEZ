@@ -724,11 +724,13 @@ def main():
                     })
                 
                 if len(scraped_profiles) >= batch_size or len(target_updates) >= batch_size:
-                    log_msg(f"📤 Exporting batch...", "INFO")
-                    export_to_google_sheets_with_rate_limiting(scraped_profiles, tags_mapping, target_updates)
-                    scraped_profiles = []
-                    target_updates = []
-                    time.sleep(10)
+                    log_msg(f"📤 Exporting batch of {len(scraped_profiles)} profiles...", "INFO")
+                    if export_to_google_sheets_with_rate_limiting(scraped_profiles, tags_mapping, target_updates):
+                        scraped_profiles = []
+                        target_updates = []
+                        time.sleep(10)
+                    else:
+                        log_msg("⚠️ Export failed, keeping data for retry", "WARNING")
             except Exception as e:
                 stats.errors += 1
                 log_msg(f"❌ Error: {e}", "ERROR")

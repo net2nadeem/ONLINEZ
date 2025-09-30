@@ -305,7 +305,7 @@ def get_target_users(client, sheet_url):
 
 # === POST SCRAPING ===
 def scrape_recent_post(driver, nickname):
-    """Scrape recent post from /profile/public/{nickname}"""
+    """Scrape recent post URL from /profile/public/{nickname}"""
     post_url = f"https://damadam.pk/profile/public/{nickname}"
     try:
         log_msg(f"📝 Scraping post for {nickname}...", "INFO")
@@ -315,24 +315,29 @@ def scrape_recent_post(driver, nickname):
         recent_post = driver.find_element(By.CSS_SELECTOR, "article.mbl.bas-sh")
         post_data = {'LPOST': '', 'LDATE-TIME': ''}
         
-        # Get post text
-        text_selectors = ["span[style='font-size:1.1em'] bdi", "h2[itemprop='text']", "bdi"]
-        for sel in text_selectors:
+        # Get post URL from href attribute
+        url_selectors = [
+            "a[itemprop='url'][href*='/content/']",
+            "a[href*='/content/']",
+            "a[itemprop='discussionUrl']"
+        ]
+        
+        for sel in url_selectors:
             try:
-                elem = recent_post.find_element(By.CSS_SELECTOR, sel)
-                if elem.text.strip():
-                    text = clean_text(elem.text)
-                    post_data['LPOST'] = text[:100] + "..." if len(text) > 100 else text
+                link_elem = recent_post.find_element(By.CSS_SELECTOR, sel)
+                href = link_elem.get_attribute('href')
+                if href and '/content/' in href:
+                    # Ensure full URL
+                    if href.startswith('http'):
+                        post_data['LPOST'] = href
+                    else:
+                        post_data['LPOST'] = f"https://damadam.pk{href}"
                     break
             except:
                 continue
         
         if not post_data['LPOST']:
-            try:
-                recent_post.find_element(By.CSS_SELECTOR, "img[itemprop='image']")
-                post_data['LPOST'] = "[Image Post]"
-            except:
-                post_data['LPOST'] = "[No Content]"
+            post_data['LPOST'] = "[No Post URL]"
         
         # Get timestamp
         time_selectors = ["time[itemprop='datePublished']", "time"]
@@ -349,7 +354,7 @@ def scrape_recent_post(driver, nickname):
             post_data['LDATE-TIME'] = "N/A"
         
         stats.posts_scraped += 1
-        log_msg(f"✅ Post scraped: {post_data['LPOST'][:30]}...", "SUCCESS")
+        log_msg(f"✅ Post URL scraped: {post_data['LPOST']}", "SUCCESS")
         return post_data
     except TimeoutException:
         log_msg(f"⏳ No posts for {nickname}", "WARNING")

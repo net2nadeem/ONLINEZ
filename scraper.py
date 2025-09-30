@@ -304,6 +304,7 @@ def get_target_users(client, sheet_url):
         return []
 
 # === POST SCRAPING ===
+
 def scrape_recent_post(driver, nickname):
     """Scrape the most recent post URL (text or image) and published date from /profile/public/{nickname}."""
     post_url = f"https://damadam.pk/profile/public/{nickname}"
@@ -313,7 +314,7 @@ def scrape_recent_post(driver, nickname):
         # Wait for at least one article to load
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "article.mbl.bas-sh")))
         
-        # Get all article elements and select the first (most recent)
+        # Get all articles and select the most recent (first one)
         articles = driver.find_elements(By.CSS_SELECTOR, "article.mbl.bas-sh")
         if not articles:
             log_msg(f"⏳ No posts found for {nickname}", "WARNING")
@@ -324,22 +325,21 @@ def scrape_recent_post(driver, nickname):
         
         # URL selectors for text and image posts
         url_selectors = [
-            "a[itemprop='discussionUrl']",  # Text post comment link (e.g., /comments/text/42416943/12/#reply)
-            "a[href*='/content/']",         # General content link
-            "a[href*='/share/']",           # Image post share link
-            "a:contains('SHARE')",          # Image post share button (use XPath for Selenium)
+            "a[itemprop='discussionUrl']",  # Comment link for text (/comments/text/) and image (/comments/image/)
+            "a[href*='/content/']",         # Content link for image posts
+            "form[action*='/1-on-1/share/photo/'] button[name='purl']"  # Share button for image posts
         ]
         
         for sel in url_selectors:
             try:
-                if ':contains' in sel:
-                    # Use XPath for :contains pseudo-class
-                    link_elem = recent_post.find_element(By.XPATH, ".//a[contains(text(), 'SHARE')]")
+                if 'form' in sel:
+                    # For share button, get the form’s action or button’s value
+                    link_elem = recent_post.find_element(By.CSS_SELECTOR, sel)
+                    href = link_elem.get_attribute('value') or recent_post.find_element(By.XPATH, ".//form[@action='/1-on-1/share/photo/']").get_attribute('action')
                 else:
                     link_elem = recent_post.find_element(By.CSS_SELECTOR, sel)
-                href = link_elem.get_attribute('href')
-                if href and ('/content/' in href or '/share/' in href):
-                    # Ensure full URL
+                    href = link_elem.get_attribute('href')
+                if href and ('/comments/' in href or '/content/' in href or '/share/' in href):
                     post_data['LPOST'] = href if href.startswith('http') else f"https://damadam.pk{href}"
                     break
             except:
@@ -377,9 +377,7 @@ def scrape_recent_post(driver, nickname):
         return {'LPOST': '[Error]', 'LDATE-TIME': 'N/A'}
 
 def parse_post_timestamp(timestamp):
-    """Convert relative timestamp (e.g., '1 day ago') to a standard format."""
-    # Example implementation (customize as needed)
-    from datetime import datetime, timedelta
+    """Convert relative timestamp (e.g., '12 hours ago') to a standard format."""
     timestamp = timestamp.lower().strip()
     now = datetime.now()
     
@@ -387,16 +385,19 @@ def parse_post_timestamp(timestamp):
         return timestamp  # Return as-is if not relative
     
     try:
-        num, unit = timestamp.split(' ', 1)[0], timestamp.split(' ', 1)[1].split(' ago')[0]
+        parts = timestamp.split(' ', 1)
+        if len(parts) < 2:
+            return "N/A"
+        num, unit = parts[0].replace('-', '').strip(), parts[1].split(' ago')[0].strip()
         num = int(num)
-        if 'day' in unit:
+        if 'hour' in unit:
+            return (now - timedelta(hours=num)).strftime('%Y-%m-%d %H:%M:%S')
+        elif 'day' in unit:
             return (now - timedelta(days=num)).strftime('%Y-%m-%d %H:%M:%S')
         elif 'week' in unit:
             return (now - timedelta(weeks=num)).strftime('%Y-%m-%d %H:%M:%S')
         elif 'month' in unit:
             return (now - timedelta(days=num*30)).strftime('%Y-%m-%d %H:%M:%S')
-        elif 'hour' in unit:
-            return (now - timedelta(hours=num)).strftime('%Y-%m-%d %H:%M:%S')
         else:
             return "N/A"
     except:

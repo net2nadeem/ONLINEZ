@@ -502,7 +502,7 @@ def get_tags_mapping(client, sheet_url):
         headers = tags_data[0]
         for col_idx, header in enumerate(headers):
             if header.strip():
-                tag_icon = TAGS_CONFIG.get(header.strip(), f"🔌 {header.strip()}")
+                tag_icon = TAGS_CONFIG.get(header.strip(), f"🔹 {header.strip()}")
                 for row in tags_data[1:]:
                     if col_idx < len(row) and row[col_idx].strip():
                         nick = row[col_idx].strip()

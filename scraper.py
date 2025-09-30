@@ -304,55 +304,56 @@ def get_target_users(client, sheet_url):
         return []
 
 # === POST SCRAPING ===
-
 def scrape_recent_post(driver, nickname):
-    """Scrape the most recent post URL (text or image) and published date from /profile/public/{nickname}."""
+    """Scrape recent post URL from /profile/public/{nickname}"""
     post_url = f"https://damadam.pk/profile/public/{nickname}"
     try:
         log_msg(f"📝 Scraping post for {nickname}...", "INFO")
         driver.get(post_url)
-        # Wait for at least one article to load
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "article.mbl.bas-sh")))
         
-        # Get all articles and select the most recent (first one)
-        articles = driver.find_elements(By.CSS_SELECTOR, "article.mbl.bas-sh")
-        if not articles:
-            log_msg(f"⏳ No posts found for {nickname}", "WARNING")
-            return {'LPOST': '[No Posts]', 'LDATE-TIME': 'N/A'}
-        
-        recent_post = articles[0]  # First article is the most recent
+        recent_post = driver.find_element(By.CSS_SELECTOR, "article.mbl.bas-sh")
         post_data = {'LPOST': '', 'LDATE-TIME': ''}
         
-        # URL selectors for text and image posts
+        # Get post URL - Try multiple patterns for text and image posts
         url_selectors = [
-            "a[itemprop='discussionUrl']",  # Comment link for text (/comments/text/) and image (/comments/image/)
-            "a[href*='/content/']",         # Content link for image posts
-            "form[action*='/1-on-1/share/photo/'] button[name='purl']"  # Share button for image posts
+            "a[href*='/content/']",           # Image posts: /content/42403588/g/
+            "a[href*='/comments/text/']",     # Text posts: /comments/text/42442215/29/
+            "a[href*='/comments/image/']",    # Image posts (alternative): /comments/image/42403588/29/
         ]
         
         for sel in url_selectors:
             try:
-                if 'form' in sel:
-                    # For share button, get the form’s action or button’s value
-                    link_elem = recent_post.find_element(By.CSS_SELECTOR, sel)
-                    href = link_elem.get_attribute('value') or recent_post.find_element(By.XPATH, ".//form[@action='/1-on-1/share/photo/']").get_attribute('action')
-                else:
-                    link_elem = recent_post.find_element(By.CSS_SELECTOR, sel)
-                    href = link_elem.get_attribute('href')
-                if href and ('/comments/' in href or '/content/' in href or '/share/' in href):
-                    post_data['LPOST'] = href if href.startswith('http') else f"https://damadam.pk{href}"
-                    break
+                link_elem = recent_post.find_element(By.CSS_SELECTOR, sel)
+                href = link_elem.get_attribute('href')
+                if href:
+                    # Extract post ID and construct clean URL
+                    if '/content/' in href:
+                        # Image post - use as is
+                        post_data['LPOST'] = href if href.startswith('http') else f"https://damadam.pk{href}"
+                        break
+                    elif '/comments/text/' in href:
+                        # Text post - extract ID and make clean URL
+                        match = re.search(r'/comments/text/(\d+)/', href)
+                        if match:
+                            post_id = match.group(1)
+                            post_data['LPOST'] = f"https://damadam.pk/comments/text/{post_id}/"
+                            break
+                    elif '/comments/image/' in href:
+                        # Image post comment link - extract ID and make clean URL
+                        match = re.search(r'/comments/image/(\d+)/', href)
+                        if match:
+                            post_id = match.group(1)
+                            post_data['LPOST'] = f"https://damadam.pk/content/{post_id}/g/"
+                            break
             except:
                 continue
         
         if not post_data['LPOST']:
             post_data['LPOST'] = "[No Post URL]"
         
-        # Timestamp selectors
-        time_selectors = [
-            "time[itemprop='datePublished']",  # Primary timestamp
-            "time"                            # Fallback
-        ]
+        # Get timestamp
+        time_selectors = ["time[itemprop='datePublished']", "time"]
         for sel in time_selectors:
             try:
                 elem = recent_post.find_element(By.CSS_SELECTOR, sel)
@@ -366,9 +367,8 @@ def scrape_recent_post(driver, nickname):
             post_data['LDATE-TIME'] = "N/A"
         
         stats.posts_scraped += 1
-        log_msg(f"✅ Post URL scraped: {post_data['LPOST']}", "SUCCESS")
+        log_msg(f"✅ Post URL: {post_data['LPOST']}", "SUCCESS")
         return post_data
-    
     except TimeoutException:
         log_msg(f"⏳ No posts for {nickname}", "WARNING")
         return {'LPOST': '[No Posts]', 'LDATE-TIME': 'N/A'}
@@ -376,33 +376,6 @@ def scrape_recent_post(driver, nickname):
         log_msg(f"❌ Post scrape failed: {e}", "ERROR")
         return {'LPOST': '[Error]', 'LDATE-TIME': 'N/A'}
 
-def parse_post_timestamp(timestamp):
-    """Convert relative timestamp (e.g., '12 hours ago') to a standard format."""
-    timestamp = timestamp.lower().strip()
-    now = datetime.now()
-    
-    if 'ago' not in timestamp:
-        return timestamp  # Return as-is if not relative
-    
-    try:
-        parts = timestamp.split(' ', 1)
-        if len(parts) < 2:
-            return "N/A"
-        num, unit = parts[0].replace('-', '').strip(), parts[1].split(' ago')[0].strip()
-        num = int(num)
-        if 'hour' in unit:
-            return (now - timedelta(hours=num)).strftime('%Y-%m-%d %H:%M:%S')
-        elif 'day' in unit:
-            return (now - timedelta(days=num)).strftime('%Y-%m-%d %H:%M:%S')
-        elif 'week' in unit:
-            return (now - timedelta(weeks=num)).strftime('%Y-%m-%d %H:%M:%S')
-        elif 'month' in unit:
-            return (now - timedelta(days=num*30)).strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            return "N/A"
-    except:
-        return "N/A"
-        
 # === PROFILE SCRAPING ===
 def scrape_profile(driver, nickname):
     """Scrape profile with post data"""

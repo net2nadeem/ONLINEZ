@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-DamaDam Online Users Scraper - Simplified Version
-Scrapes online users only and exports to 'Online' sheet
+DamaDam Profile Scraper - ENHANCED VERSION with Recent Post Data
+GitHub Actions ready with Tags integration and smart updates
 """
 
 import os
@@ -12,7 +12,7 @@ import random
 import re
 from datetime import datetime, timedelta
 
-print("🚀 Starting DamaDam Online Users Scraper...")
+print("🚀 Starting DamaDam Scraper (Enhanced with Post Data)...")
 
 # Check required packages
 missing_packages = []
@@ -54,7 +54,6 @@ if missing_packages:
 
 # === CONFIGURATION ===
 LOGIN_URL = "https://damadam.pk/login/"
-ONLINE_USERS_URL = "https://damadam.pk/online_kon/"
 
 # Environment variables
 USERNAME = os.getenv('DAMADAM_USERNAME')
@@ -117,7 +116,7 @@ class ScraperStats:
         elapsed = str(datetime.now() - self.start_time).split('.')[0]
         print(f"\n{Fore.MAGENTA}📊 FINAL SUMMARY:")
         print(f"⏱️  Total Time: {elapsed}")
-        print(f"👥 Online Users Found: {self.total}")
+        print(f"🎯 Target Users: {self.total}")
         print(f"✅ Successfully Scraped: {self.success}")
         print(f"❌ Errors: {self.errors}")
         print(f"🆕 New Profiles: {self.new_profiles}")
@@ -277,40 +276,31 @@ def login_to_damadam(driver):
         log_msg(f"❌ Login error: {e}", "ERROR")
         return False
 
-# === ONLINE USERS ===
-def get_online_users(driver):
-    """Get list of online users from online_kon page"""
+# === TARGET USERS ===
+def get_target_users(client, sheet_url):
+    """Get target users from Target sheet"""
     try:
-        log_msg("👥 Fetching online users...", "INFO")
-        driver.get(ONLINE_USERS_URL)
-        time.sleep(3)
+        log_msg("🎯 Loading target users...", "INFO")
+        workbook = client.open_by_url(sheet_url)
+        target_sheet = workbook.worksheet("Target")
+        target_data = target_sheet.get_all_values()
         
-        # Wait for user list to load
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/users/']"))
-        )
+        if not target_data or len(target_data) < 2:
+            log_msg("⚠️ Target sheet empty", "WARNING")
+            return []
         
-        # Find all user profile links
-        user_links = driver.find_elements(By.CSS_SELECTOR, "a[href*='/users/']")
+        pending_users = []
+        for i, row in enumerate(target_data[1:], 2):
+            if len(row) >= 2:
+                username = row[0].strip()
+                status = row[1].strip().upper()
+                if username and status == 'PENDING':
+                    pending_users.append({'username': username, 'row_index': i})
         
-        online_users = []
-        for link in user_links:
-            try:
-                href = link.get_attribute('href')
-                if href and '/users/' in href:
-                    # Extract nickname from URL: https://damadam.pk/users/nickname/
-                    match = re.search(r'/users/([^/]+)/?', href)
-                    if match:
-                        nickname = match.group(1).strip()
-                        if nickname and nickname not in online_users:
-                            online_users.append(nickname)
-            except:
-                continue
-        
-        log_msg(f"✅ Found {len(online_users)} online users", "SUCCESS")
-        return online_users
+        log_msg(f"✅ Found {len(pending_users)} pending users", "SUCCESS")
+        return pending_users
     except Exception as e:
-        log_msg(f"❌ Failed to fetch online users: {e}", "ERROR")
+        log_msg(f"❌ Failed to load targets: {e}", "ERROR")
         return []
 
 # === POST SCRAPING ===
@@ -512,7 +502,7 @@ def get_tags_mapping(client, sheet_url):
         headers = tags_data[0]
         for col_idx, header in enumerate(headers):
             if header.strip():
-                tag_icon = TAGS_CONFIG.get(header.strip(), f"🔸 {header.strip()}")
+                tag_icon = TAGS_CONFIG.get(header.strip(), f"🔌 {header.strip()}")
                 for row in tags_data[1:]:
                     if col_idx < len(row) and row[col_idx].strip():
                         nick = row[col_idx].strip()
@@ -533,27 +523,50 @@ def get_tags_for_nickname(nickname, tags_mapping):
         return ""
     return ", ".join(tags_mapping[nickname])
 
-def export_to_online_sheet(profiles_batch, tags_mapping):
-    """Export to 'Online' sheet with rate limiting"""
-    if not profiles_batch:
+def export_to_google_sheets_with_rate_limiting(profiles_batch, tags_mapping, target_updates=None):
+    """Export with rate limiting"""
+    if not profiles_batch and not target_updates:
         return False
     
     try:
-        log_msg("📊 Exporting to Online sheet...", "INFO")
+        log_msg("📊 Exporting to Google Sheets...", "INFO")
         client = get_google_sheets_client()
         if not client:
             return False
         
         workbook = client.open_by_url(SHEET_URL)
         
-        # Get or create 'Online' sheet
-        try:
-            worksheet = workbook.worksheet("Online")
-            log_msg("✅ Found Online sheet", "SUCCESS")
-        except:
-            log_msg("📄 Creating Online sheet...", "INFO")
-            worksheet = workbook.add_worksheet(title="Online", rows="1000", cols="15")
+        # Update target statuses
+        if target_updates:
+            try:
+                target_sheet = workbook.worksheet("Target")
+                for update in target_updates:
+                    try:
+                        track_api_request()
+                        row_idx = update['row_index']
+                        status = update['status']
+                        notes = update.get('notes', '')
+                        
+                        update_range = f'B{row_idx}:D{row_idx}'
+                        update_values = [status]
+                        update_values.append(datetime.now().strftime("%Y-%m-%d %H:%M") if status.upper() == 'COMPLETED' else '')
+                        update_values.append(notes)
+                        
+                        target_sheet.update(update_range, [update_values])
+                        time.sleep(GOOGLE_API_RATE_LIMIT['request_delay'])
+                    except Exception as e:
+                        if "429" in str(e):
+                            time.sleep(65)
+                            target_sheet.update(update_range, [update_values])
+                log_msg(f"✅ Updated {len(target_updates)} target statuses", "SUCCESS")
+            except Exception as e:
+                log_msg(f"⚠️ Target update failed: {e}", "WARNING")
         
+        if not profiles_batch:
+            return True
+        
+        # Main worksheet
+        worksheet = workbook.sheet1
         headers = ["DATETIME","NICKNAME","TAGS","CITY","GENDER","MARRIED","AGE","JOINED","FOLLOWERS","POSTS","LPOST","LDATE-TIME","PLINK","PIMAGE","INTRO"]
         
         track_api_request()
@@ -656,7 +669,7 @@ def export_to_online_sheet(profiles_batch, tags_mapping):
 # === MAIN ===
 def main():
     """Main execution"""
-    log_msg("🚀 Starting Online Users Scraper", "INFO")
+    log_msg("🚀 Starting Enhanced Scraper", "INFO")
     
     driver = setup_github_browser()
     if not driver:
@@ -671,20 +684,23 @@ def main():
             return
         
         tags_mapping = get_tags_mapping(client, SHEET_URL)
-        online_users = get_online_users(driver)
+        target_users = get_target_users(client, SHEET_URL)
         
-        if not online_users:
-            log_msg("❌ No online users found", "ERROR")
+        if not target_users:
+            log_msg("❌ No target users found", "ERROR")
             return
         
-        stats.total = len(online_users)
+        stats.total = len(target_users)
         scraped_profiles = []
+        target_updates = []
         batch_size = GOOGLE_API_RATE_LIMIT['batch_size']
         
-        log_msg(f"👥 Processing {stats.total} online users...", "INFO")
+        log_msg(f"🎯 Processing {stats.total} users...", "INFO")
         
-        for i, nickname in enumerate(online_users, 1):
+        for i, target_user in enumerate(target_users, 1):
             stats.current = i
+            nickname = target_user['username']
+            row_index = target_user['row_index']
             
             log_msg(f"🔍 Scraping: {nickname} ({i}/{stats.total})", "INFO")
             
@@ -694,24 +710,40 @@ def main():
                 if profile:
                     scraped_profiles.append(profile)
                     stats.success += 1
+                    target_updates.append({
+                        'row_index': row_index,
+                        'status': 'Completed',
+                        'notes': 'Successfully scraped'
+                    })
                 else:
                     stats.errors += 1
+                    target_updates.append({
+                        'row_index': row_index,
+                        'status': 'Pending',
+                        'notes': 'Failed - will retry'
+                    })
                 
-                if len(scraped_profiles) >= batch_size:
+                if len(scraped_profiles) >= batch_size or len(target_updates) >= batch_size:
                     log_msg(f"📤 Exporting batch of {len(scraped_profiles)} profiles...", "INFO")
-                    if export_to_online_sheet(scraped_profiles, tags_mapping):
+                    if export_to_google_sheets_with_rate_limiting(scraped_profiles, tags_mapping, target_updates):
                         scraped_profiles = []
+                        target_updates = []
                         time.sleep(10)
                     else:
                         log_msg("⚠️ Export failed, keeping data for retry", "WARNING")
             except Exception as e:
                 stats.errors += 1
                 log_msg(f"❌ Error: {e}", "ERROR")
+                target_updates.append({
+                    'row_index': row_index,
+                    'status': 'Pending',
+                    'notes': f'Error: {str(e)[:100]}'
+                })
             
             time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
         
-        if scraped_profiles:
-            export_to_online_sheet(scraped_profiles, tags_mapping)
+        if scraped_profiles or target_updates:
+            export_to_google_sheets_with_rate_limiting(scraped_profiles, tags_mapping, target_updates)
         
         stats.show_summary()
         log_msg(f"🎯 Completed: {stats.success}/{stats.total}", "INFO")

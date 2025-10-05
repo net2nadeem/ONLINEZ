@@ -316,11 +316,19 @@ def scrape_recent_post(driver, nickname):
         recent_post = driver.find_element(By.CSS_SELECTOR, "article.mbl.bas-sh")
         post_data = {'LPOST': '', 'LDATE-TIME': ''}
         
-        # URL extraction
+        # URL extraction (fixed f-string backslash issue)
+        def format_text_url(href):
+            match = re.search(r'/comments/text/(\d+)/', href)
+            return f"https://damadam.pk/comments/text/{match.group(1)}/" if match else ""
+        
+        def format_image_url(href):
+            match = re.search(r'/comments/image/(\d+)/', href)
+            return f"https://damadam.pk/content/{match.group(1)}/g/" if match else ""
+        
         url_patterns = [
             ("a[href*='/content/']", lambda h: h if h.startswith('http') else f"https://damadam.pk{h}"),
-            ("a[href*='/comments/text/']", lambda h: f"https://damadam.pk/comments/text/{re.search(r'/comments/text/(\\d+)/', h).group(1)}/" if re.search(r'/comments/text/(\\d+)/', h) else ""),
-            ("a[href*='/comments/image/']", lambda h: f"https://damadam.pk/content/{re.search(r'/comments/image/(\\d+)/', h).group(1)}/g/" if re.search(r'/comments/image/(\\d+)/', h) else "")
+            ("a[href*='/comments/text/']", format_text_url),
+            ("a[href*='/comments/image/']", format_image_url)
         ]
         
         for selector, formatter in url_patterns:

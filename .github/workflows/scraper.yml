@@ -17,7 +17,7 @@ on:
   
   # Automatic schedule - runs every 6 hours
   schedule:
-    - cron: '0 */1 * * *'
+    - cron: '*/30 * * * *'
   
   # For testing
   push:
